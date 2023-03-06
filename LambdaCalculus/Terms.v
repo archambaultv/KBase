@@ -1,11 +1,11 @@
-From Coq Require Import Arith.
 From Coq Require Import Relations.
+From Coq Require Import Arith.
 From KBase Require Import Tactics.
 From KBase Require Import Relations.
 
 (** Definition of the terms *)
 Inductive tm : Set :=
-  | I : nat -> tm (* de Bruijn indices *)
+  | Idx : nat -> tm (* de Bruijn indices *)
   | Abs : tm -> tm
   | App : tm -> tm -> tm.
 
@@ -15,7 +15,7 @@ Inductive tm : Set :=
 The index k takes into account the number of lambda abstraction *)
 Fixpoint shift (t : tm) (n k : nat) : tm :=
   match t with
-  | I i => if lt_dec i k then I i else I (i + n)
+  | Idx i => if lt_dec i k then Idx i else Idx (i + n)
   | Abs t => Abs (shift t n (k + 1))
   | App t1 t2 => App (shift t1 n k) (shift t2 n k)
   end.
@@ -60,16 +60,18 @@ Qed.
 (** Let us now define the substitution *)
 Fixpoint subst (t u : tm) (k : nat) : tm :=
   match t with
-  | I i => match lt_eq_lt_dec i k with
-            | inleft (left _) => I i
+  | Idx i => match lt_eq_lt_dec i k with
+            | inleft (left _) => Idx i
             | inleft (right _) => shift u k 0
-            | inright _ => I (i - 1)
+            | inright _ => Idx (i - 1)
            end
   | Abs t => Abs (subst t u (k + 1))
   | App t1 t2 => App (subst t1 u k) (subst t2 u k)
   end.
 
 (** Theorems about the substitution function *)
+
+(** A shift can always be distributed over a substitution *)
 Theorem subst_shift_swap : forall t u k1 n2 k2,
   k2 <= k1 ->
   shift (subst t u k1) n2 k2 = subst (shift t n2 k2) u (k1 + n2).
@@ -77,6 +79,17 @@ Proof.
   induction t; crush; repeat (autodestruct; crush).
 Qed.
 #[export] Hint Resolve subst_shift_swap : KBaseHints.
+
+Theorem subst_shift_swap2 : forall t u k1 n2 k2,
+  k2 > k1 ->
+  shift (subst t u k1) n2 k2 = subst (shift t n2 (k2 + 1)) (shift u n2 (k2 - k1)) k1.
+Proof.
+  induction t; crush; repeat (autodestruct; crush).
+  assert (H2 : k2 >= 0 + k1) by crush.
+  rewrite (shift_swap_ge u k1 0 n2 k2 H2).
+  auto.
+Qed.
+#[export] Hint Resolve subst_shift_swap2 : KBaseHints. 
 
 Theorem subst_shift_merge : forall t u k1 n2 k2,
   k2 <= k1 ->
@@ -188,7 +201,7 @@ Qed.
 
 (** Parallel small steps *)
 Inductive pss : tm -> tm -> Prop :=
-| pss_i : forall i, pss (I i) (I i)
+| pss_i : forall i, pss (Idx i) (Idx i)
 | pss_para : forall t1 t1' t2 t2', 
     pss t1 t1' -> 
     pss t2 t2' -> 
@@ -288,7 +301,7 @@ Qed.
 
 Fixpoint pss_normalizer (x : tm) : tm :=
   match x with
-  | I i => I i
+  | Idx i => Idx i
   | Abs t => Abs (pss_normalizer t)
   | App (Abs t) u => subst (pss_normalizer t) (pss_normalizer u) 0
   | App t1 t2 => App (pss_normalizer t1) (pss_normalizer t2)
